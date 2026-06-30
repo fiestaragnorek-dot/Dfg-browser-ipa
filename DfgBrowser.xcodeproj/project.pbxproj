@@ -88,7 +88,7 @@
 			buildConfigurationList = AA0050 /* Build configuration list for PBXNativeTarget "DfgBrowser" */;
 			buildPhases = (
 				AA0041 /* Sources */,
-				AA0042 /* Frameworks */,
+				AA0020 /* Frameworks */,
 				AA0043 /* Resources */,
 			);
 			buildRules = (
@@ -160,13 +160,6 @@
 				AA0003 /* BrowserView.swift in Sources */,
 				AA0002 /* ContentView.swift in Sources */,
 				AA0001 /* DfgBrowserApp.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		AA0042 /* Frameworks */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
