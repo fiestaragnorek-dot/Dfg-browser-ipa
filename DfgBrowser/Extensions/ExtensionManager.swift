@@ -18,6 +18,88 @@ struct InstalledExtension: Identifiable, Codable, Equatable {
     var storeUrl: String? = nil
 }
 
+// Tampermonkey core – built-in userscript manager for Dfg
+enum TampermonkeyCore {
+    static let loaderScript = """
+// == Dfg Tampermonkey Core v5.3 ==
+console.log('[Dfg] Tampermonkey active');
+(function(){
+if(window.__TM_DFG__)return; window.__TM_DFG__=true;
+
+// GM API stub
+window.GM_info={scriptHandler:"Tampermonkey",version:"5.3-dfg",script:{name:"Dfg Userscript"}};
+window.GM_getValue=(k,d)=>{try{return JSON.parse(localStorage.getItem('TM_'+k)??'null')??d}catch{return d}};
+window.GM_setValue=(k,v)=>localStorage.setItem('TM_'+k,JSON.stringify(v));
+window.GM_deleteValue=k=>localStorage.removeItem('TM_'+k);
+window.GM_xmlhttpRequest=({method='GET',url,onload})=>fetch(url,{method}).then(r=>r.text()).then(t=>onload&&onload({responseText:t,status:200}));
+window.GM_addStyle=css=>{const s=document.createElement('style');s.textContent=css;document.head.appendChild(s);return s};
+window.GM_log=console.log.bind(console);
+window.unsafeWindow=window;
+
+// userscript storage
+const KEY='dfg_tm_scripts_v1';
+function getScripts(){ try{return JSON.parse(localStorage.getItem(KEY)||'[]')}catch{return[]} }
+function saveScripts(a){ localStorage.setItem(KEY, JSON.stringify(a)) }
+window.TM_getScripts=getScripts;
+window.TM_addScript = function(meta, code){
+  const arr=getScripts(); arr.push({id:Date.now().toString(36), meta, code, enabled:true, time:Date.now()}); saveScripts(arr); console.log('[TM] script added', meta); location.reload();
+};
+window.TM_toggle = function(id){ const s=getScripts(); const f=s.find(x=>x.id===id); if(f){f.enabled=!f.enabled;saveScripts(s);location.reload()} };
+
+// run matching scripts
+function match(url, pattern){
+  try{
+    const re = new RegExp('^' + pattern.replace(/[.+?^${}()|[\\]\\\\]/g,'\\\\$&').replace(/\\*/g,'.*') + '$');
+    return re.test(url);
+  }catch{return url.includes(pattern.replace(/\\*/g,''))}
+}
+const scripts = getScripts().filter(s=>s.enabled);
+const href = location.href;
+scripts.forEach(us=>{
+  try{
+    const meta = us.meta||'';
+    const matches = [...meta.matchAll(/@match\\s+([^\\n]+)/g)].map(m=>m[1].trim());
+    const includes = [...meta.matchAll(/@include\\s+([^\\n]+)/g)].map(m=>m[1].trim());
+    const patterns = [...matches, ...includes];
+    if(patterns.length===0 || patterns.some(p=>match(href,p))){
+      console.log('[TM] running', us.meta.split('\\n')[0]);
+      (new Function(us.code))();
+    }
+  }catch(e){ console.error('[TM] error',e)}
+});
+
+// UI – long press top-left 1s to open manager
+let pressTimer;
+document.addEventListener('touchstart',e=>{ if(e.touches[0].clientX<60 && e.touches[0].clientY<60){ pressTimer=setTimeout(openTM,900)}},{passive:true});
+document.addEventListener('touchend',()=>clearTimeout(pressTimer));
+document.addEventListener('mousedown',e=>{ if(e.clientX<60&&e.clientY<60) pressTimer=setTimeout(openTM,900)});
+document.addEventListener('mouseup',()=>clearTimeout(pressTimer));
+
+function openTM(){
+  const scripts=getScripts();
+  const list = scripts.map((s,i)=>`${i+1}. ${(s.meta.match(/@name\\s+([^\n]+)/)||[])[1]||'Unnamed'} [${s.enabled?'ON':'OFF'}] id:${s.id}`).join('\\n') || '(пусто)';
+  const cmd = prompt('TAMPERMONKEY DFG\\n\\nУстановлено: '+scripts.length+'\\n\\n'+list+'\\n\\nКоманды:\\nnew – добавить скрипт\\ntoggle <id> – вкл/выкл\\ndel <id> – удалить\\nexport – экспорт\\n\\nДолгое нажатие в левом верхнем углу открывает это меню', 'new');
+  if(!cmd) return;
+  if(cmd==='new'){
+    const meta = prompt('Вставь ==UserScript== meta блок:\\n// ==UserScript==\\n// @name My Script\\n// @match *://*/*\\n// ==/UserScript==', '// ==UserScript==\\n// @name New Script\\n// @match *://*/*\\n// ==/UserScript==');
+    if(!meta) return;
+    const code = prompt('Код скрипта (JS):', "console.log('Hello from TM'); alert('Tampermonkey Dfg работает!');");
+    if(code===null) return;
+    TM_addScript(meta, code);
+  } else if(cmd.startsWith('toggle ')){
+    TM_toggle(cmd.split(' ')[1]);
+  } else if(cmd.startsWith('del ')){
+    const id=cmd.split(' ')[1]; saveScripts(getScripts().filter(x=>x.id!==id)); location.reload();
+  } else if(cmd==='export'){
+    prompt('Скопируй JSON:', JSON.stringify(getScripts()));
+  }
+}
+window.openTampermonkey = openTM;
+console.log('%c[Tampermonkey Dfg] Long-press top-left corner to open manager – or run openTampermonkey()', 'color:#000;background:#fff;border:1px solid #000;padding:2px 4px');
+})();
+"""
+}
+
 class ExtensionManager: ObservableObject {
     static let shared = ExtensionManager()
     
@@ -174,9 +256,55 @@ class ExtensionManager: ObservableObject {
             version: "1.58",
             description: "Эффективный блокировщик рекламы.",
             enabled: true,
-            contentScripts: ["console.log('[Dfg] uBlock active')"],
+            contentScripts: ["""
+// Dfg uBlock lite
+console.log('[Dfg] uBlock Origin active');
+(function(){
+  const blockList = ["doubleclick.net","googlesyndication","googleadservices","adservice.google","adsystem","/ads/","/ad_",".ads.","ads.","popunder","clickbait"];
+  const origFetch = window.fetch;
+  window.fetch = function(input, init){
+    try { const url = (typeof input==='string'?input:input.url)||''; if(blockList.some(b=>url.includes(b))){ console.log('[uBlock] blocked',url); return Promise.reject(new TypeError('Blocked'));} } catch(e){}
+    return origFetch.apply(this, arguments);
+  };
+  const obs = new MutationObserver(()=>{
+    document.querySelectorAll('iframe[src*="ads"], div[id*="ad"], div[class*="ad-"], ins.adsbygoogle, [id^="google_ads"]').forEach(el=>el.remove());
+  });
+  obs.observe(document.documentElement,{childList:true,subtree:true});
+})();
+"""],
             permissions: ["<all_urls>", "webRequest", "storage"],
             storeUrl: "https://chromewebstore.google.com/detail/ublock-origin/cjpalhdlnbpafiamejdnhcphjbkeiagm"
+        ),
+        InstalledExtension(
+            id: "mnojpmjdmbbfmejpflffifhffcmidifd",
+            name: "Tampermonkey",
+            version: "5.3",
+            description: "Менеджер пользовательских скриптов. Установлен по умолчанию в Dfg Browser.",
+            enabled: true,
+            contentScripts: [TampermonkeyCore.loaderScript],
+            permissions: ["<all_urls>", "storage", "activeTab", "scripting"],
+            storeUrl: "https://chromewebstore.google.com/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo"
+        ),
+        InstalledExtension(
+            id: "eimadpbcbfnmbkopoojfekhnkhdbieeh",
+            name: "Dark Reader",
+            version: "4.9",
+            description: "Тёмный режим для всех сайтов",
+            enabled: false,
+            contentScripts: ["""
+// Dark Reader lite for Dfg
+if(!window.__darkReaderDfg){
+window.__darkReaderDfg=true;
+const s=document.createElement('style');
+s.textContent=`html{filter:invert(1) hue-rotate(180deg) !important;background:#111 !important} img,video,iframe,canvas,svg,[style*="background-image"]{filter:invert(1) hue-rotate(180deg) !important}`;
+function toggleDR(){ const e=document.getElementById('__dfg_dr'); if(e){e.remove()} else {s.id='__dfg_dr'; document.documentElement.appendChild(s)}}
+if(localStorage.getItem('dfg_darkreader')==='1') toggleDR();
+console.log('[Dfg] Dark Reader ready. window.toggleDarkReader()');
+window.toggleDarkReader=()=>{ const on=!document.getElementById('__dfg_dr'); if(on){document.documentElement.appendChild(s);s.id='__dfg_dr';localStorage.setItem('dfg_darkreader','1')} else {document.getElementById('__dfg_dr')?.remove();localStorage.setItem('dfg_darkreader','0')}; return on; };
+}
+"""],
+            permissions: ["<all_urls>"],
+            storeUrl: "https://chromewebstore.google.com/detail/dark-reader/eimadpbcbfnmbkopoojfekhnkhdbieeh"
         ),
         InstalledExtension(
             id: "nngceckbapebfimnlniiiahkandclblb",
@@ -187,6 +315,16 @@ class ExtensionManager: ObservableObject {
             contentScripts: [],
             permissions: ["storage", "activeTab"],
             storeUrl: "https://chromewebstore.google.com/detail/bitwarden-free-password-m/nngceckbapebfimnlniiiahkandclblb"
+        ),
+        InstalledExtension(
+            id: "bfnaelmomeimhlpmgjnjophhpkkoljpa",
+            name: "Violentmonkey",
+            version: "2.18",
+            description: "Open-source менеджер скриптов",
+            enabled: false,
+            contentScripts: [TampermonkeyCore.loaderScript],
+            permissions: ["<all_urls>", "storage"],
+            storeUrl: "https://chromewebstore.google.com/detail/violentmonkey/jinjaccalgkegednnccohejagnlnfdag"
         )
     ]
 }
