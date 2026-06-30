@@ -118,27 +118,27 @@ true;
         }
         
         // WKDownloadDelegate
+        private var downloadDestinations: [ObjectIdentifier: URL] = [:]
+        
         func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping (URL?) -> Void) {
             let temp = FileManager.default.temporaryDirectory.appendingPathComponent(suggestedFilename)
             try? FileManager.default.removeItem(at: temp)
+            downloadDestinations[ObjectIdentifier(download)] = temp
             completionHandler(temp)
         }
         
         func downloadDidFinish(_ download: WKDownload) {
-            guard let url = download.originalRequest?.url else { return }
-            // Try to extract extension ID from referrer or URL
-            // Fallback: take last path component
+            let id = ObjectIdentifier(download)
+            guard let fileURL = downloadDestinations[id] else { return }
+            downloadDestinations.removeValue(forKey: id)
             Task {
-                if let data = try? Data(contentsOf: download.destinationURL ?? URL(fileURLWithPath: "/dev/null")) {
-                    // Try to guess store ID
-                    var storeId = "unknown"
-                    if let u = download.originalRequest?.url?.absoluteString,
-                       let m = u.range(of: "id%3D([a-z]{32})", options: .regularExpression) {
-                        // crude
-                        storeId = String(u[m]).replacingOccurrences(of: "id%3D", with: "")
-                    }
-                    try? await extensionManager.installCRX(data: data, storeId: storeId, fallbackName: storeId)
+                guard let data = try? Data(contentsOf: fileURL) else { return }
+                var storeId = "unknown"
+                if let u = download.originalRequest?.url?.absoluteString,
+                   let range = u.range(of: "[a-z]{32}", options: .regularExpression) {
+                    storeId = String(u[range])
                 }
+                try? await extensionManager.installCRX(data: data, storeId: storeId, fallbackName: storeId)
             }
         }
         

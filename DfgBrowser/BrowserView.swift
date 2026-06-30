@@ -176,17 +176,21 @@ struct BrowserView: UIViewRepresentable {
         }
         
         // MARK: - WKDownloadDelegate
+        private var downloadDestinations: [ObjectIdentifier: URL] = [:]
+
         func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping (URL?) -> Void) {
             let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(suggestedFilename)
             try? FileManager.default.removeItem(at: tmp)
+            downloadDestinations[ObjectIdentifier(download)] = tmp
             completionHandler(tmp)
         }
         
         func downloadDidFinish(_ download: WKDownload) {
+            let id = ObjectIdentifier(download)
+            guard let fileURL = downloadDestinations[id] else { return }
+            downloadDestinations.removeValue(forKey: id)
             Task {
-                guard let fileURL = download.progress.fileURL else { return }
                 guard let data = try? Data(contentsOf: fileURL) else { return }
-                // try extract ext id
                 var storeId = "downloaded-ext"
                 if let original = download.originalRequest?.url?.absoluteString,
                    let range = original.range(of: "[a-z]{32}", options: .regularExpression) {
