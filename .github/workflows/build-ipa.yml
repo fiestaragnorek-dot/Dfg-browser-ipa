@@ -19,12 +19,10 @@ jobs:
 
       - name: Resolve Swift Packages
         run: |
-          cd DfgBrowser
           xcodebuild -resolvePackageDependencies -project DfgBrowser.xcodeproj -scheme DfgBrowser -clonedSourcePackagesDirPath .spm
 
-      - name: Build unsigned IPA (simulator + device generic)
+      - name: Build unsigned IPA
         run: |
-          cd DfgBrowser
           # Build for generic iOS device, no signing
           xcodebuild \
             -project DfgBrowser.xcodeproj \
@@ -50,12 +48,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: DfgBrowser-unsigned
-          path: DfgBrowser/DfgBrowser-unsigned.ipa
+          path: DfgBrowser-unsigned.ipa
           retention-days: 14
 
-      - name: Build archive (for signing)
+      - name: Build archive
         run: |
-          cd DfgBrowser
           xcodebuild archive \
             -project DfgBrowser.xcodeproj \
             -scheme DfgBrowser \
@@ -71,5 +68,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: DfgBrowser-xcarchive
-          path: DfgBrowser/build/DfgBrowser.xcarchive
+          path: build/DfgBrowser.xcarchive
           retention-days: 7
