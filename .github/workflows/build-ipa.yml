@@ -1,0 +1,75 @@
+name: Build Dfg Browser IPA
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode 15.4
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Resolve Swift Packages
+        run: |
+          cd DfgBrowser
+          xcodebuild -resolvePackageDependencies -project DfgBrowser.xcodeproj -scheme DfgBrowser -clonedSourcePackagesDirPath .spm
+
+      - name: Build unsigned IPA (simulator + device generic)
+        run: |
+          cd DfgBrowser
+          # Build for generic iOS device, no signing
+          xcodebuild \
+            -project DfgBrowser.xcodeproj \
+            -scheme DfgBrowser \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath ./build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            PRODUCT_BUNDLE_IDENTIFIER=com.dfgbrowser.ios \
+            build
+
+          APP_PATH=$(find ./build -name "DfgBrowser.app" -type d | head -1)
+          echo "App found at: $APP_PATH"
+          ls -lh "$APP_PATH"
+
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          zip -r DfgBrowser-unsigned.ipa Payload
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: DfgBrowser-unsigned
+          path: DfgBrowser/DfgBrowser-unsigned.ipa
+          retention-days: 14
+
+      - name: Build archive (for signing)
+        run: |
+          cd DfgBrowser
+          xcodebuild archive \
+            -project DfgBrowser.xcodeproj \
+            -scheme DfgBrowser \
+            -archivePath ./build/DfgBrowser.xcarchive \
+            -sdk iphoneos \
+            -configuration Release \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            SKIP_INSTALL=NO \
+            BUILD_LIBRARY_FOR_DISTRIBUTION=NO
+
+      - name: Upload xcarchive
+        uses: actions/upload-artifact@v4
+        with:
+          name: DfgBrowser-xcarchive
+          path: DfgBrowser/build/DfgBrowser.xcarchive
+          retention-days: 7
